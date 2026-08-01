@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>부산 국제영화고등학교 발표 도우미</title>
+  <meta name="description" content="부산 국제영화고등학교 교실용 스마트 발표자 추첨 및 발표 타이머 프로그램">
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@300;400;500;700;900&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="background-effects">
+    <div class="light-beam left"></div>
+    <div class="light-beam right"></div>
+    <div class="film-grain"></div>
+  </div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-logo">
+        <div class="clapperboard-icon">
+          <div class="clapper-top"></div>
+          <div class="clapper-bottom"><i class="fa-solid fa-film"></i></div>
+        </div>
+        <div class="header-text">
+          <h1>BUSAN INT'L FILM HIGH SCHOOL</h1>
+          <p class="subtitle"><span class="badge">🎬 발표 도우미</span> 부산 국제영화고등학교 스마트 클래스룸</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="sound-toggle-btn" class="icon-btn" title="음향 켜기/끄기">
+          <i class="fa-solid fa-volume-high"></i>
+        </button>
+        <button id="fullscreen-btn" class="icon-btn" title="전체화면">
+          <i class="fa-solid fa-expand"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Stage -->
+    <main class="main-stage">
+      <!-- Left / Top: Random Picker & Timer Section -->
+      <div class="stage-grid">
+        <!-- Card 1: Random Picker -->
+        <section class="glass-card picker-card">
+          <div class="card-header">
+            <h2><i class="fa-solid fa-clapperboard text-gold"></i> 랜덤 발표자 추첨</h2>
+            <label class="exclude-toggle">
+              <input type="checkbox" id="exclude-drawn-checkbox" checked>
+              <span class="checkbox-custom"></span>
+              <span class="toggle-label"><i class="fa-solid fa-user-slash"></i> 이미 뽑힌 학생 제외</span>
+            </label>
+          </div>
+
+          <div class="picker-display-wrapper">
+            <div class="cinema-frame">
+              <div class="film-strip-border top"></div>
+              <div class="stage-screen" id="stage-screen">
+                <div class="screen-idle-state" id="idle-state">
+                  <div class="spotlight"></div>
+                  <i class="fa-solid fa-ticket-simple idle-icon"></i>
+                  <p class="idle-text">'추첨하기' 버튼을 누르면 발표자가 선정됩니다</p>
+                </div>
+                
+                <div class="rolling-container hidden" id="rolling-container">
+                  <div class="rolling-drum" id="rolling-drum">
+                    <span class="rolling-name">준비...</span>
+                  </div>
+                  <div class="rolling-subtext">🎬 두구두구... 영사기 돌아가는 중!</div>
+                </div>
+              </div>
+              <div class="film-strip-border bottom"></div>
+            </div>
+          </div>
+
+          <div class="picker-controls">
+            <button id="pick-btn" class="primary-btn glow-gold">
+              <i class="fa-solid fa-play"></i> 추첨하기 (Take 1!)
+            </button>
+            <button id="reset-drawn-btn" class="secondary-btn">
+              <i class="fa-solid fa-rotate-left"></i> 추첨 기록 초기화
+            </button>
+          </div>
+        </section>
+
+        <!-- Card 2: Presentation Timer -->
+        <section class="glass-card timer-card">
+          <div class="card-header">
+            <h2><i class="fa-solid fa-stopwatch text-gold"></i> 발표 카운트다운 타이머</h2>
+            <div class="preset-buttons">
+              <button class="preset-btn" data-time="60">1분</button>
+              <button class="preset-btn" data-time="180">3분</button>
+              <button class="preset-btn" data-time="300">5분</button>
+            </div>
+          </div>
+
+          <div class="timer-display-wrapper">
+            <div class="timer-circle-container">
+              <svg class="timer-svg" viewBox="0 0 200 200">
+                <circle class="timer-circle-bg" cx="100" cy="100" r="88"></circle>
+                <circle class="timer-circle-progress" id="timer-progress" cx="100" cy="100" r="88"></circle>
+              </svg>
+              <div class="timer-text-content" id="timer-text-content">
+                <div class="timer-digits" id="timer-display">03:00</div>
+                <div class="timer-status" id="timer-status">대기 중</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="timer-controls">
+            <button id="timer-start-btn" class="timer-btn start-btn glow-red">
+              <i class="fa-solid fa-play"></i> 시작
+            </button>
+            <button id="timer-pause-btn" class="timer-btn pause-btn" disabled>
+              <i class="fa-solid fa-pause"></i> 일시정지
+            </button>
+            <button id="timer-reset-btn" class="timer-btn reset-btn">
+              <i class="fa-solid fa-arrow-rotate-right"></i> 리셋
+            </button>
+          </div>
+
+          <div class="custom-time-row">
+            <span class="custom-label">직접 설정:</span>
+            <input type="number" id="custom-min" min="0" max="60" placeholder="분" value="3">
+            <span>분</span>
+            <input type="number" id="custom-sec" min="0" max="59" placeholder="초" value="0">
+            <span>초</span>
+            <button id="custom-set-btn" class="small-btn">설정</button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Bottom Roster Section (Always Visible) -->
+    <footer class="app-roster-footer">
+      <div class="roster-panel glass-card">
+        <div class="roster-header">
+          <div class="roster-title">
+            <i class="fa-solid fa-users text-gold"></i>
+            <h3>학급 학생 명단</h3>
+            <span class="roster-count-badge" id="roster-count">총 10명</span>
+          </div>
+          <div class="roster-actions">
+            <button id="sample-roster-btn" class="text-link-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 예시 명단 채우기</button>
+            <button id="clear-roster-btn" class="text-link-btn danger"><i class="fa-solid fa-trash-can"></i> 비우기</button>
+          </div>
+        </div>
+        
+        <div class="roster-body">
+          <textarea id="roster-input" rows="2" placeholder="학생 이름이나 번호를 쉼표(,)로 구분해서 입력하세요. (예: 1번 김영화, 2번 이시네마, 3번 박감독...)"></textarea>
+          <div class="roster-help">
+            <i class="fa-solid fa-circle-info"></i> 쉼표(,)로 구분하여 명단을 입력하면 자동으로 저장되며, 언제든지 수정 가능합니다.
+          </div>
+        </div>
+
+        <div class="drawn-list-section" id="drawn-list-section">
+          <span class="drawn-label"><i class="fa-solid fa-circle-check text-gold"></i> 이미 발표한 학생:</span>
+          <div class="drawn-chips" id="drawn-chips">
+            <span class="empty-drawn-msg">아직 발표한 학생이 없습니다.</span>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Winner Modal Popup -->
+  <div class="modal-overlay hidden" id="winner-modal">
+    <canvas id="confetti-canvas"></canvas>
+    <div class="winner-modal-content">
+      <div class="modal-clapper">
+        <div class="clapper-top animated-clap"></div>
+        <div class="clapper-bottom">SCENE 1 · TAKE 1</div>
+      </div>
+      <div class="modal-ribbon">TODAY'S SPEAKER</div>
+      <h2 class="winner-title">오늘의 발표자</h2>
+      <div class="winner-name-display" id="winner-name-display">김영화</div>
+      <p class="winner-subtext">멋진 발표를 기대합니다! 🎬✨</p>
+      
+      <div class="modal-actions">
+        <button id="close-modal-btn" class="primary-btn glow-gold large-btn">
+          <i class="fa-solid fa-check"></i> 확인 및 발표 준비
+        </button>
+        <button id="re-pick-btn" class="secondary-btn large-btn">
+          <i class="fa-solid fa-dice"></i> 다시 뽑기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
