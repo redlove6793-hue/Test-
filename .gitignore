@@ -1,0 +1,14 @@
+# Environment variables (Critical Security)
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build & System outputs
+dist
+build
+.DS_Store
+*.log

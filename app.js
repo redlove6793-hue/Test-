@@ -1,520 +1,439 @@
 /* ==========================================================================
-   부산 국제영화고등학교 발표 도우미 - Application Script
+   스마트 출석부 - Firebase Cloud Firestore & Google Auth Integration Engine
    ========================================================================== */
 
-document.addEventListener('DOMContentLoaded', () => {
-  // ------------------------------------------------------------------------
-  // State Variables
-  // ------------------------------------------------------------------------
-  const DEFAULT_ROSTER = '1번 김영화, 2번 이시네마, 3번 박감독, 4번 최배우, 5번 정촬영, 6번 한편집, 7번 음사운드, 8번 윤조명, 9번 강시나리오, 10번 송제작';
-  
-  let roster = [];
-  let drawnList = [];
-  let isRolling = false;
-  let soundEnabled = true;
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged 
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  onSnapshot, 
+  writeBatch 
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  // Timer State
-  let timerInterval = null;
-  let totalTime = 180; // 3분 기본
-  let timeLeft = 180;
-  let isTimerRunning = false;
-  let alarmInterval = null;
-
-  // Audio Context
-  let audioCtx = null;
-
-  // ------------------------------------------------------------------------
-  // DOM Elements
-  // ------------------------------------------------------------------------
-  const rosterInput = document.getElementById('roster-input');
-  const rosterCountBadge = document.getElementById('roster-count');
-  const sampleRosterBtn = document.getElementById('sample-roster-btn');
-  const clearRosterBtn = document.getElementById('clear-roster-btn');
-  const excludeDrawnCheckbox = document.getElementById('exclude-drawn-checkbox');
-  const drawnChipsContainer = document.getElementById('drawn-chips');
-  const resetDrawnBtn = document.getElementById('reset-drawn-btn');
-
-  // Picker DOM
-  const pickBtn = document.getElementById('pick-btn');
-  const stageScreen = document.getElementById('stage-screen');
-  const idleState = document.getElementById('idle-state');
-  const rollingContainer = document.getElementById('rolling-container');
-  const rollingDrum = document.getElementById('rolling-drum');
-
-  // Timer DOM
-  const timerDisplay = document.getElementById('timer-display');
-  const timerStatus = document.getElementById('timer-status');
-  const timerProgress = document.getElementById('timer-progress');
-  const timerStartBtn = document.getElementById('timer-start-btn');
-  const timerPauseBtn = document.getElementById('timer-pause-btn');
-  const timerResetBtn = document.getElementById('timer-reset-btn');
-  const presetBtns = document.querySelectorAll('.preset-btn');
-  const customMinInput = document.getElementById('custom-min');
-  const customSecInput = document.getElementById('custom-sec');
-  const customSetBtn = document.getElementById('custom-set-btn');
-
-  // Modal DOM
-  const winnerModal = document.getElementById('winner-modal');
-  const winnerNameDisplay = document.getElementById('winner-name-display');
-  const closeModalBtn = document.getElementById('close-modal-btn');
-  const rePickBtn = document.getElementById('re-pick-btn');
-  const soundToggleBtn = document.getElementById('sound-toggle-btn');
-  const fullscreenBtn = document.getElementById('fullscreen-btn');
-
-  // ------------------------------------------------------------------------
-  // Web Audio API Sound Generator
-  // ------------------------------------------------------------------------
-  function getAudioContext() {
-    if (!audioCtx) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (AudioContextClass) {
-        audioCtx = new AudioContextClass();
-      }
+// ------------------------------------------------------------------------
+// 1. Firebase Config Setup (Vite Env or Direct Fallback)
+// ------------------------------------------------------------------------
+const getEnv = (key, fallback) => {
+  try {
+    if (import.meta && import.meta.env && import.meta.env[key]) {
+      return import.meta.env[key];
     }
-    if (audioCtx && audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    return audioCtx;
-  }
+  } catch (e) {}
+  return fallback;
+};
 
-  function playTickSound() {
-    if (!soundEnabled) return;
-    try {
-      const ctx = getAudioContext();
-      if (!ctx) return;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(400 + Math.random() * 200, ctx.currentTime);
-      gain.gain.setValueAtTime(0.05, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.04);
-    } catch (e) { console.error(e); }
-  }
+const firebaseConfig = {
+  apiKey: getEnv("VITE_FIREBASE_API_KEY", "AIzaSyCXi40lNWao1_FlEcmO7ZNeo4tvjm_xsDw"),
+  authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN", "psh-test-87e5d.firebaseapp.com"),
+  projectId: getEnv("VITE_FIREBASE_PROJECT_ID", "psh-test-87e5d"),
+  storageBucket: getEnv("VITE_FIREBASE_STORAGE_BUCKET", "psh-test-87e5d.firebasestorage.app"),
+  messagingSenderId: getEnv("VITE_FIREBASE_MESSAGING_SENDER_ID", "501499047227"),
+  appId: getEnv("VITE_FIREBASE_APP_ID", "1:501499047227:web:87a913b97d407a63019b1e"),
+  measurementId: getEnv("VITE_FIREBASE_MEASUREMENT_ID", "G-7F7BM89ENK")
+};
 
-  function playWinSound() {
-    if (!soundEnabled) return;
-    try {
-      const ctx = getAudioContext();
-      if (!ctx) return;
-      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6 Fanfare
-      notes.forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const startTime = ctx.currentTime + idx * 0.12;
-        
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, startTime);
-        gain.gain.setValueAtTime(0.2, startTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.4);
-        
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(startTime);
-        osc.stop(startTime + 0.4);
-      });
-    } catch (e) { console.error(e); }
-  }
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-  function playAlarmSound() {
-    if (!soundEnabled) return;
-    try {
-      const ctx = getAudioContext();
-      if (!ctx) return;
-      
-      const playBeep = () => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
-        gain.gain.setValueAtTime(0.2, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.25);
-      };
+// ------------------------------------------------------------------------
+// 2. Mock 20 Students Seed Data
+// ------------------------------------------------------------------------
+const MOCK_STUDENTS = [
+  { id: 1, name: "강하늘", number: 1, note: "" },
+  { id: 2, name: "고은지", number: 2, note: "" },
+  { id: 3, name: "김민준", number: 3, note: "" },
+  { id: 4, name: "김서연", number: 4, note: "" },
+  { id: 5, name: "박도현", number: 5, note: "" },
+  { id: 6, name: "박소율", number: 6, note: "" },
+  { id: 7, name: "서지후", number: 7, note: "" },
+  { id: 8, name: "손예은", number: 8, note: "" },
+  { id: 9, name: "송우진", number: 9, note: "" },
+  { id: 10, name: "신유나", number: 10, note: "" },
+  { id: 11, name: "안현우", number: 11, note: "" },
+  { id: 12, name: "윤하은", number: 12, note: "" },
+  { id: 13, name: "이준서", number: 13, note: "" },
+  { id: 14, name: "이지안", number: 14, note: "" },
+  { id: 15, name: "임건우", number: 15, note: "" },
+  { id: 16, name: "장채원", number: 16, note: "" },
+  { id: 17, name: "정시우", number: 17, note: "" },
+  { id: 18, name: "조아린", number: 18, note: "" },
+  { id: 19, name: "최현준", number: 19, note: "" },
+  { id: 20, name: "한수아", number: 20, note: "" }
+];
 
-      playBeep();
-      setTimeout(playBeep, 300);
-      setTimeout(playBeep, 600);
-    } catch (e) { console.error(e); }
-  }
+// ------------------------------------------------------------------------
+// 3. Application State & DOM Elements
+// ------------------------------------------------------------------------
+let currentUser = null;
+let studentsList = [...MOCK_STUDENTS];
+let attendanceMap = {}; // { studentId: { status: 'present'|'late'|'absent'|'leave', note: '' } }
+let selectedDate = new Date().toISOString().split('T')[0];
+let currentFilter = 'all';
+let searchQuery = '';
+let unsubscribeAttendance = null;
 
-  // ------------------------------------------------------------------------
-  // Roster Management Functions
-  // ------------------------------------------------------------------------
-  function loadSavedRoster() {
-    const savedRoster = localStorage.getItem('bifhs_roster');
-    if (savedRoster !== null) {
-      rosterInput.value = savedRoster;
-    } else {
-      rosterInput.value = DEFAULT_ROSTER;
-    }
+// DOM Selectors
+const loggedOutState = document.getElementById('logged-out-state');
+const loggedInState = document.getElementById('logged-in-state');
+const googleLoginBtn = document.getElementById('google-login-btn');
+const googleLogoutBtn = document.getElementById('google-logout-btn');
+const userAvatar = document.getElementById('user-avatar');
+const userName = document.getElementById('user-name');
+const userEmail = document.getElementById('user-email');
+const authAlertBanner = document.getElementById('auth-alert-banner');
 
-    const savedDrawn = localStorage.getItem('bifhs_drawn');
-    if (savedDrawn) {
-      try {
-        drawnList = JSON.parse(savedDrawn);
-      } catch (e) {
-        drawnList = [];
-      }
-    }
-    parseRoster();
-    updateDrawnChipsUI();
-  }
+const attendanceDateInput = document.getElementById('attendance-date');
+const todayBtn = document.getElementById('today-btn');
+const seedStudentsBtn = document.getElementById('seed-students-btn');
+const allPresentBtn = document.getElementById('all-present-btn');
 
-  function parseRoster() {
-    const rawText = rosterInput.value.trim();
-    if (!rawText) {
-      roster = [];
-    } else {
-      roster = rawText.split(/,|\n/)
-        .map(name => name.trim())
-        .filter(name => name.length > 0);
-    }
+const countPresent = document.getElementById('count-present');
+const countLate = document.getElementById('count-late');
+const countAbsent = document.getElementById('count-absent');
+const countLeave = document.getElementById('count-leave');
+const statTotalBadge = document.getElementById('stat-total-badge');
+const attendanceRatePercent = document.getElementById('attendance-rate-percent');
+const attendanceProgressBar = document.getElementById('attendance-progress-bar');
 
-    rosterCountBadge.textContent = `총 ${roster.length}명`;
-    localStorage.setItem('bifhs_roster', rawText);
-  }
+const studentSearchInput = document.getElementById('student-search-input');
+const filterTabs = document.querySelectorAll('.filter-tab');
+const studentCardsGrid = document.getElementById('student-cards-grid');
 
-  function updateDrawnChipsUI() {
-    drawnChipsContainer.innerHTML = '';
-    if (drawnList.length === 0) {
-      drawnChipsContainer.innerHTML = '<span class="empty-drawn-msg">아직 발표한 학생이 없습니다.</span>';
-      return;
-    }
+const vercelGuideBtn = document.getElementById('vercel-guide-btn');
+const vercelModal = document.getElementById('vercel-modal');
+const closeVercelModalBtn = document.getElementById('close-vercel-modal-btn');
+const confirmVercelModalBtn = document.getElementById('confirm-vercel-modal-btn');
 
-    drawnList.forEach(name => {
-      const chip = document.createElement('div');
-      chip.className = 'drawn-chip';
-      chip.innerHTML = `<i class="fa-solid fa-user-check"></i> ${name}`;
-      drawnChipsContainer.appendChild(chip);
-    });
-
-    localStorage.setItem('bifhs_drawn', JSON.stringify(drawnList));
-  }
-
-  // ------------------------------------------------------------------------
-  // Random Picker Engine (2-second Rapid Rolling)
-  // ------------------------------------------------------------------------
-  function startRandomPick() {
-    if (isRolling) return;
-    parseRoster();
-
-    if (roster.length === 0) {
-      alert('발표자 명단을 입력해 주세요!');
-      rosterInput.focus();
-      return;
-    }
-
-    const excludeDrawn = excludeDrawnCheckbox.checked;
-    let candidates = roster;
-
-    if (excludeDrawn) {
-      candidates = roster.filter(name => !drawnList.includes(name));
-    }
-
-    if (candidates.length === 0) {
-      alert('모든 학생이 이미 발표를 마쳤습니다!\n추첨 기록 초기화 버튼을 눌러 다시 시작할 수 있습니다.');
-      return;
-    }
-
-    // Switch Stage to Rolling State
-    isRolling = true;
-    idleState.classList.add('hidden');
-    rollingContainer.classList.remove('hidden');
-    pickBtn.disabled = true;
-
-    let rollInterval = null;
-    let duration = 2000; // 2 seconds
-    let startTime = Date.now();
-
-    rollInterval = setInterval(() => {
-      const randomIndex = Math.floor(Math.random() * candidates.length);
-      const randomName = candidates[randomIndex];
-      rollingDrum.innerHTML = `<span class="rolling-name">${randomName}</span>`;
-      playTickSound();
-
-      // Check if 2 seconds elapsed
-      if (Date.now() - startTime >= duration) {
-        clearInterval(rollInterval);
-        finishRandomPick(candidates);
-      }
-    }, 60);
-  }
-
-  function finishRandomPick(candidates) {
-    const winnerIndex = Math.floor(Math.random() * candidates.length);
-    const winner = candidates[winnerIndex];
-
-    // Record drawn list
-    if (excludeDrawnCheckbox.checked && !drawnList.includes(winner)) {
-      drawnList.push(winner);
-      updateDrawnChipsUI();
-    }
-
-    // Reset Stage Screen
-    rollingContainer.classList.add('hidden');
-    idleState.classList.remove('hidden');
-    isRolling = false;
-    pickBtn.disabled = false;
-
-    // Show Winner Modal
-    winnerNameDisplay.textContent = winner;
-    winnerModal.classList.remove('hidden');
-    playWinSound();
-    launchConfetti();
-  }
-
-  // ------------------------------------------------------------------------
-  // Timer Functions
-  // ------------------------------------------------------------------------
-  function formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  }
-
-  function updateTimerUI() {
-    timerDisplay.textContent = formatTime(timeLeft);
-    const progressFraction = timeLeft / totalTime;
-    const maxOffset = 553; // 2 * PI * 88
-    const strokeOffset = maxOffset * (1 - progressFraction);
-    timerProgress.style.strokeDashoffset = strokeOffset;
-  }
-
-  function setTimer(seconds) {
-    stopTimer();
-    clearAlarmEffects();
-    totalTime = Math.max(1, seconds);
-    timeLeft = totalTime;
-    timerStatus.textContent = '대기 중';
-    updateTimerUI();
-  }
-
-  function startTimer() {
-    if (isTimerRunning) return;
-    getAudioContext();
-    clearAlarmEffects();
-
-    if (timeLeft <= 0) {
-      timeLeft = totalTime;
-    }
-
-    isTimerRunning = true;
-    timerStatus.textContent = '발표 진행 중...';
-    timerStartBtn.disabled = true;
-    timerPauseBtn.disabled = false;
-
-    timerInterval = setInterval(() => {
-      timeLeft--;
-      updateTimerUI();
-
-      if (timeLeft <= 0) {
-        onTimerExpired();
-      }
-    }, 1000);
-  }
-
-  function pauseTimer() {
-    if (!isTimerRunning) return;
-    clearInterval(timerInterval);
-    isTimerRunning = false;
-    timerStatus.textContent = '일시 정지';
-    timerStartBtn.disabled = false;
-    timerPauseBtn.disabled = true;
-  }
-
-  function stopTimer() {
-    clearInterval(timerInterval);
-    isTimerRunning = false;
-    timerStartBtn.disabled = false;
-    timerPauseBtn.disabled = true;
-    timerStatus.textContent = '대기 중';
-  }
-
-  function resetTimer() {
-    stopTimer();
-    clearAlarmEffects();
-    timeLeft = totalTime;
-    updateTimerUI();
-  }
-
-  function onTimerExpired() {
-    stopTimer();
-    timerStatus.textContent = '⏰ 발표 시간 종료!';
+// ------------------------------------------------------------------------
+// 4. Firebase Authentication Setup
+// ------------------------------------------------------------------------
+onAuthStateChanged(auth, (user) => {
+  currentUser = user;
+  if (user) {
+    loggedOutState.classList.add('hidden');
+    loggedInState.classList.remove('hidden');
+    authAlertBanner.classList.add('hidden');
     
-    // Add Expired Blinking Class
-    document.querySelector('.timer-card').classList.add('timer-expired');
-
-    // Play Alarm Sound repeatedly for 4 seconds
-    playAlarmSound();
-    alarmInterval = setInterval(playAlarmSound, 1200);
-    setTimeout(() => {
-      clearInterval(alarmInterval);
-    }, 5000);
+    userAvatar.src = user.photoURL || 'https://via.placeholder.com/34';
+    userName.textContent = user.displayName || '교사';
+    userEmail.textContent = user.email || '';
+  } else {
+    loggedOutState.classList.remove('hidden');
+    loggedInState.classList.add('hidden');
+    authAlertBanner.classList.remove('hidden');
   }
-
-  function clearAlarmEffects() {
-    if (alarmInterval) clearInterval(alarmInterval);
-    document.querySelector('.timer-card').classList.remove('timer-expired');
-  }
-
-  // ------------------------------------------------------------------------
-  // Canvas Confetti Generator
-  // ------------------------------------------------------------------------
-  function launchConfetti() {
-    const canvas = document.getElementById('confetti-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    
-    canvas.width = winnerModal.clientWidth || window.innerWidth;
-    canvas.height = winnerModal.clientHeight || window.innerHeight;
-
-    const particles = [];
-    const particleCount = 100;
-    const colors = ['#f5c518', '#ffd700', '#e50914', '#ffffff', '#ff9f1c'];
-
-    for (let i = 0; i < particleCount; i++) {
-      particles.push({
-        x: canvas.width / 2,
-        y: canvas.height / 2,
-        vx: (Math.random() - 0.5) * 14,
-        vy: (Math.random() - 0.7) * 16,
-        size: Math.random() * 8 + 4,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        rotation: Math.random() * 360,
-        rSpeed: (Math.random() - 0.5) * 10,
-        opacity: 1
-      });
-    }
-
-    let animationFrame = null;
-    function render() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      let aliveCount = 0;
-
-      particles.forEach(p => {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.vy += 0.4; // gravity
-        p.opacity -= 0.015;
-        p.rotation += p.rSpeed;
-
-        if (p.opacity > 0) {
-          aliveCount++;
-          ctx.save();
-          ctx.translate(p.x, p.y);
-          ctx.rotate((p.rotation * Math.PI) / 180);
-          ctx.globalAlpha = Math.max(0, p.opacity);
-          ctx.fillStyle = p.color;
-          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
-          ctx.restore();
-        }
-      });
-
-      if (aliveCount > 0) {
-        animationFrame = requestAnimationFrame(render);
-      }
-    }
-
-    render();
-  }
-
-  // ------------------------------------------------------------------------
-  // Event Listeners
-  // ------------------------------------------------------------------------
-  // Roster inputs
-  rosterInput.addEventListener('input', parseRoster);
-
-  sampleRosterBtn.addEventListener('click', () => {
-    rosterInput.value = DEFAULT_ROSTER;
-    parseRoster();
-  });
-
-  clearRosterBtn.addEventListener('click', () => {
-    if (confirm('명단을 모두 비우시겠습니까?')) {
-      rosterInput.value = '';
-      parseRoster();
-    }
-  });
-
-  resetDrawnBtn.addEventListener('click', () => {
-    if (drawnList.length === 0) return;
-    if (confirm('이미 발표한 학생 추첨 기록을 초기화하시겠습니까?')) {
-      drawnList = [];
-      updateDrawnChipsUI();
-    }
-  });
-
-  // Picker Button
-  pickBtn.addEventListener('click', () => {
-    getAudioContext();
-    startRandomPick();
-  });
-
-  // Modal Buttons
-  closeModalBtn.addEventListener('click', () => {
-    winnerModal.classList.add('hidden');
-  });
-
-  rePickBtn.addEventListener('click', () => {
-    winnerModal.classList.add('hidden');
-    setTimeout(() => {
-      startRandomPick();
-    }, 200);
-  });
-
-  // Sound Toggle
-  soundToggleBtn.addEventListener('click', () => {
-    soundEnabled = !soundEnabled;
-    soundToggleBtn.innerHTML = soundEnabled 
-      ? '<i class="fa-solid fa-volume-high"></i>' 
-      : '<i class="fa-solid fa-volume-xmark"></i>';
-    soundToggleBtn.style.opacity = soundEnabled ? '1' : '0.5';
-  });
-
-  // Fullscreen Toggle
-  fullscreenBtn.addEventListener('click', () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(err => console.error(err));
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-      }
-    }
-  });
-
-  // Timer Controls
-  timerStartBtn.addEventListener('click', startTimer);
-  timerPauseBtn.addEventListener('click', pauseTimer);
-  timerResetBtn.addEventListener('click', resetTimer);
-
-  presetBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const timeInSec = parseInt(btn.getAttribute('data-time'), 10);
-      setTimer(timeInSec);
-    });
-  });
-
-  customSetBtn.addEventListener('click', () => {
-    const mins = parseInt(customMinInput.value, 10) || 0;
-    const secs = parseInt(customSecInput.value, 10) || 0;
-    const totalSecs = (mins * 60) + secs;
-    if (totalSecs <= 0) {
-      alert('1초 이상의 시간을 설정해주세요!');
-      return;
-    }
-    setTimer(totalSecs);
-  });
-
-  // Init
-  loadSavedRoster();
-  setTimer(180); // default 3 min
+  loadStudentsAndAttendance();
 });
+
+googleLoginBtn.addEventListener('click', async () => {
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    console.error("Google Auth Error:", error);
+    alert("구글 로그인 중 오류가 발생했습니다: " + error.message);
+  }
+});
+
+googleLogoutBtn.addEventListener('click', async () => {
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error("Logout Error:", error);
+  }
+});
+
+// ------------------------------------------------------------------------
+// 5. Firestore DB Operations (Students & Attendance Sync)
+// ------------------------------------------------------------------------
+async function loadStudentsAndAttendance() {
+  try {
+    // 1. Fetch Students
+    const studentsSnap = await getDocs(collection(db, "students"));
+    if (!studentsSnap.empty) {
+      studentsList = [];
+      studentsSnap.forEach(docSnap => {
+        studentsList.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      studentsList.sort((a, b) => Number(a.number || a.id) - Number(b.number || b.id));
+    } else {
+      studentsList = [...MOCK_STUDENTS];
+    }
+
+    // 2. Real-time Listen to Selected Date Attendance
+    if (unsubscribeAttendance) unsubscribeAttendance();
+
+    const dateDocRef = doc(db, "attendance", selectedDate);
+    unsubscribeAttendance = onSnapshot(dateDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        attendanceMap = docSnap.data().records || {};
+      } else {
+        // Default to present for everyone if not initialized
+        attendanceMap = {};
+        studentsList.forEach(st => {
+          attendanceMap[st.id] = { status: 'present', note: '' };
+        });
+      }
+      renderRosterGrid();
+      updateStatsSummary();
+    }, (err) => {
+      console.warn("Firestore snapshot listen (offline/read fallback):", err);
+      // Fallback local state if permissions or offline
+      if (Object.keys(attendanceMap).length === 0) {
+        studentsList.forEach(st => {
+          attendanceMap[st.id] = { status: 'present', note: '' };
+        });
+      }
+      renderRosterGrid();
+      updateStatsSummary();
+    });
+  } catch (e) {
+    console.error("Firestore sync error:", e);
+    renderRosterGrid();
+    updateStatsSummary();
+  }
+}
+
+// Batch Seed 20 Mock Students into Firestore DB
+seedStudentsBtn.addEventListener('click', async () => {
+  if (!currentUser) {
+    if (!confirm("가상 엑셀 명단(20명)을 화면에 불러옵니다. (Firestore DB에 완전히 저장하려면 상단 구글 교사 로그인이 필요합니다. 계속하시겠습니까?)")) {
+      return;
+    }
+  }
+
+  try {
+    const batch = writeBatch(db);
+    MOCK_STUDENTS.forEach(student => {
+      const studentRef = doc(db, "students", String(student.id));
+      batch.set(studentRef, {
+        number: student.number,
+        name: student.name,
+        updatedAt: new Date().toISOString()
+      });
+    });
+
+    if (currentUser) {
+      await batch.commit();
+      alert("✅ Firestore DB에 가상 엑셀 명단 20명이 성공적으로 등록되었습니다!");
+    } else {
+      alert("✅ 화면에 가상 엑셀 명단 20명이 장착되었습니다!");
+    }
+
+    studentsList = [...MOCK_STUDENTS];
+    loadStudentsAndAttendance();
+  } catch (e) {
+    console.error("Seed Error:", e);
+    alert("명단 업로드 중 오류가 발생했습니다: " + e.message);
+  }
+});
+
+// Update Status for a single student
+async function setStudentStatus(studentId, newStatus) {
+  if (!attendanceMap[studentId]) {
+    attendanceMap[studentId] = { status: 'present', note: '' };
+  }
+  attendanceMap[studentId].status = newStatus;
+
+  renderRosterGrid();
+  updateStatsSummary();
+  saveAttendanceToFirestore();
+}
+
+// Update Note for a single student
+async function setStudentNote(studentId, noteText) {
+  if (!attendanceMap[studentId]) {
+    attendanceMap[studentId] = { status: 'present', note: '' };
+  }
+  attendanceMap[studentId].note = noteText;
+  saveAttendanceToFirestore();
+}
+
+// Save all attendance to Firestore doc by Date
+async function saveAttendanceToFirestore() {
+  if (!currentUser) return; // Requires login for Firestore writes
+  try {
+    const dateDocRef = doc(db, "attendance", selectedDate);
+    await setDoc(dateDocRef, {
+      date: selectedDate,
+      records: attendanceMap,
+      updatedBy: currentUser.email,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (e) {
+    console.error("Save Attendance Firestore error:", e);
+  }
+}
+
+// Mark All Students Present
+allPresentBtn.addEventListener('click', () => {
+  studentsList.forEach(st => {
+    if (!attendanceMap[st.id]) attendanceMap[st.id] = { note: '' };
+    attendanceMap[st.id].status = 'present';
+  });
+  renderRosterGrid();
+  updateStatsSummary();
+  saveAttendanceToFirestore();
+});
+
+// ------------------------------------------------------------------------
+// 6. UI Render Engine
+// ------------------------------------------------------------------------
+function renderRosterGrid() {
+  studentCardsGrid.innerHTML = '';
+
+  const filtered = studentsList.filter(st => {
+    // Search Filter
+    const matchesSearch = st.name.includes(searchQuery) || String(st.number).includes(searchQuery);
+    
+    // Status Filter
+    const currentStatus = attendanceMap[st.id]?.status || 'present';
+    const matchesFilter = (currentFilter === 'all') || (currentStatus === currentFilter);
+
+    return matchesSearch && matchesFilter;
+  });
+
+  if (filtered.length === 0) {
+    studentCardsGrid.innerHTML = `
+      <div class="loading-state">
+        <i class="fa-solid fa-user-slash spinner-icon"></i>
+        <p>조건에 일치하는 학생이 없거나 명단이 비어있습니다.</p>
+      </div>
+    `;
+    return;
+  }
+
+  filtered.forEach(st => {
+    const record = attendanceMap[st.id] || { status: 'present', note: '' };
+    const status = record.status || 'present';
+
+    const card = document.createElement('div');
+    card.className = `student-card status-border-${status}`;
+
+    let statusText = '🟢 출석';
+    let statusClass = 'status-present';
+    if (status === 'late') { statusText = '🟡 지각'; statusClass = 'status-late'; }
+    if (status === 'absent') { statusText = '🔴 결석'; statusClass = 'status-absent'; }
+    if (status === 'leave') { statusText = '🔵 조퇴'; statusClass = 'status-leave'; }
+
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="student-identity">
+          <span class="student-num-badge">${st.number}</span>
+          <span class="student-name">${st.name}</span>
+        </div>
+        <span class="student-status-badge ${statusClass}">${statusText}</span>
+      </div>
+
+      <div class="status-button-group">
+        <button class="status-btn btn-present ${status === 'present' ? 'active' : ''}" data-id="${st.id}" data-status="present">출석</button>
+        <button class="status-btn btn-late ${status === 'late' ? 'active' : ''}" data-id="${st.id}" data-status="late">지각</button>
+        <button class="status-btn btn-absent ${status === 'absent' ? 'active' : ''}" data-id="${st.id}" data-status="absent">결석</button>
+        <button class="status-btn btn-leave ${status === 'leave' ? 'active' : ''}" data-id="${st.id}" data-status="leave">조퇴</button>
+      </div>
+
+      <input type="text" class="card-note-input" data-id="${st.id}" placeholder="특이사항 / 메모 입력..." value="${record.note || ''}">
+    `;
+
+    studentCardsGrid.appendChild(card);
+  });
+
+  // Attach Event Listeners to rendered cards
+  document.querySelectorAll('.status-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = e.target.getAttribute('data-id');
+      const st = e.target.getAttribute('data-status');
+      setStudentStatus(id, st);
+    });
+  });
+
+  document.querySelectorAll('.card-note-input').forEach(input => {
+    input.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-id');
+      setStudentNote(id, e.target.value);
+    });
+  });
+}
+
+function updateStatsSummary() {
+  const total = studentsList.length;
+  let present = 0, late = 0, absent = 0, leave = 0;
+
+  studentsList.forEach(st => {
+    const stStatus = attendanceMap[st.id]?.status || 'present';
+    if (stStatus === 'present') present++;
+    if (stStatus === 'late') late++;
+    if (stStatus === 'absent') absent++;
+    if (stStatus === 'leave') leave++;
+  });
+
+  countPresent.textContent = present;
+  countLate.textContent = late;
+  countAbsent.textContent = absent;
+  countLeave.textContent = leave;
+  statTotalBadge.textContent = `총 ${total}명`;
+
+  const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+  attendanceRatePercent.textContent = `${rate}%`;
+  attendanceProgressBar.style.width = `${rate}%`;
+}
+
+// ------------------------------------------------------------------------
+// 7. Event Listeners & Date Setup
+// ------------------------------------------------------------------------
+attendanceDateInput.value = selectedDate;
+
+attendanceDateInput.addEventListener('change', (e) => {
+  selectedDate = e.target.value;
+  loadStudentsAndAttendance();
+});
+
+todayBtn.addEventListener('click', () => {
+  selectedDate = new Date().toISOString().split('T')[0];
+  attendanceDateInput.value = selectedDate;
+  loadStudentsAndAttendance();
+});
+
+studentSearchInput.addEventListener('input', (e) => {
+  searchQuery = e.target.value.trim();
+  renderRosterGrid();
+});
+
+filterTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    filterTabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentFilter = tab.getAttribute('data-filter');
+    renderRosterGrid();
+  });
+});
+
+// Vercel Guide Modal
+vercelGuideBtn.addEventListener('click', () => {
+  vercelModal.classList.remove('hidden');
+});
+
+closeVercelModalBtn.addEventListener('click', () => {
+  vercelModal.classList.add('hidden');
+});
+
+confirmVercelModalBtn.addEventListener('click', () => {
+  vercelModal.classList.add('hidden');
+});
+
+// Initial Render
+renderRosterGrid();
+updateStatsSummary();
